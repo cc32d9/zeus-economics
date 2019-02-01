@@ -37,7 +37,7 @@ describe(`${contractCode} Contract`, () => {
     var disttokenContract;
     const perDay = "100.0000"
     const code = 'auction1';
-    const cycleTime = 5;
+    const cycleTime = 15;
     const distokenSymbol = "NEW"
     const disttoken = 'distoken';
     const testuser1 = "testuser1";
