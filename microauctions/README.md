@@ -11,4 +11,6 @@ cd microauctions
 zeus test
 ```
 
+[Screencast](https://asciinema.org/a/KqSY4y4c5CynllEGMLe3FEtG9)
+
 ## Deploy (TBD)
