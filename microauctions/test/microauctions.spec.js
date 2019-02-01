@@ -37,7 +37,7 @@ describe(`${contractCode} Contract`, () => {
     var disttokenContract;
     const perDay = "100.0000"
     const code = 'auction1';
-    const cycleTime = 15;
+    const cycleTime = 25;
     const distokenSymbol = "NEW"
     const disttoken = 'distoken';
     const testuser1 = "testuser1";
@@ -119,26 +119,35 @@ describe(`${contractCode} Contract`, () => {
     const buy = async(testuser, quantity) =>{
         console.error(`buying for ${quantity} - ${testuser}`);
         var eos = await getEos(testuser, args);
-        var systemtokenContract = await eos.contract('eosio.token');
-        var testcontract1 = await eos.contract(code);
-        await testcontract1.enroll({
-                    from: testuser,
-                }, {
+        const keys = await getCreateAccount(testuser, args);
+
+        // var systemtokenContract = await eos.contract('eosio.token');
+        // var testcontract1 = await eos.contract(code);
+        var options = {
                     authorization: `${testuser}@active`,
                     broadcast: true,
-                    sign: true
-                });
-                
-                await systemtokenContract.transfer({
+                    sign: true,
+                    keyProvider: [keys.privateKey]
+                    
+        };
+        var transaction = await eos.transaction(
+        ['eosio.token',code],
+        (c) => {
+          c[code].enroll({
+                    from: testuser,
+          },options);
+          
+          c['eosio_token'].transfer({
                     from: testuser,
                     to: code,
                     quantity: `${quantity} ${systemToken}`,
                     memo:""
-                }, {
-                    authorization: `${testuser}@active`,
-                    broadcast: true,
-                    sign: true
-                });
+                },options);
+          
+        },
+        options,
+      );                
+            
     }
     const sleepCycle = ()=>{
         return delay(cycleTime * 1000);
@@ -193,7 +202,7 @@ describe(`${contractCode} Contract`, () => {
             }                    
         })();
     });
-    it.only('two cycle auction - multiple users', done => {
+    it('two cycle auction - multiple users', done => {
         (async() => {
             try {
                 await buy(testuser1,"10.0000");

@@ -100,6 +100,7 @@ CONTRACT microauctions : public eosio::contract {
           // anyone can claim for a user
           accounts_t accounts_table(_self, to.value);
           settings_t settings_table(_self, _self.value);
+          cycles_t cycles_table(_self, _self.value);
           auto current_settings = settings_table.get();
           auto existing = accounts_table.get();
           uint64_t cycle_number = getCurrentCycle();
@@ -113,7 +114,6 @@ CONTRACT microauctions : public eosio::contract {
             if(cycle_number <= current_cycle.number) // cycle not complete
               continue; 
             
-            cycles_t cycles_table(_self, _self.value);
             auto cycle_entry = cycles_table.find(current_cycle.number);
             
             auto account_quantity = current_cycle.quantity;
