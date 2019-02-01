@@ -1,0 +1,12 @@
+{
+  "ignore": [
+    "README.md",
+    "zeus-box.json"
+  ],
+  "dependencies":["seed-eos", "events", "token", "mocha", "eos-common",  "hooks-cpp-contracts"],
+  "install":{
+    "contracts":{
+      "microauctions": true
+    }
+  }
+}
