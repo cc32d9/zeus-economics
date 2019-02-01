@@ -62,7 +62,7 @@ describe(`${contractCode} Contract`, () => {
                     broadcast: true,
                     sign: true});
                 // var systemtokenContract = await eos.contract('eosio.token');
-                
+                console.error('init auction');
                 var res = await testcontract.init({
                     setting:{
                         whitelist:code,
@@ -102,13 +102,14 @@ describe(`${contractCode} Contract`, () => {
         authorization:[`${code}@active`]
     };
     
-    const claim = async(testuser1)=>{
-        var eos = await getEos(testuser1, args);
+    const claim = async(testuser)=>{
+        console.error(`claiming ${testuser}`);
+        var eos = await getEos(testuser, args);
         var testcontract1 = await eos.contract(code);
         var res = await testcontract1.claim({
-            to:testuser1
+            to:testuser
         }, {
-            authorization: `${testuser1}@active`,
+            authorization: `${testuser}@active`,
             broadcast: true,
             sign: true
         });
@@ -116,6 +117,7 @@ describe(`${contractCode} Contract`, () => {
     }
     
     const buy = async(testuser, quantity) =>{
+        console.error(`buying for ${quantity} - ${testuser}`);
         var eos = await getEos(testuser, args);
         var systemtokenContract = await eos.contract('eosio.token');
         var testcontract1 = await eos.contract(code);
@@ -128,7 +130,7 @@ describe(`${contractCode} Contract`, () => {
                 });
                 
                 await systemtokenContract.transfer({
-                    from: testuser1,
+                    from: testuser,
                     to: code,
                     quantity: `${quantity} ${systemToken}`,
                     memo:""
@@ -145,7 +147,6 @@ describe(`${contractCode} Contract`, () => {
     it('one cycle auction', done => {
         (async() => {
             try {
-                await sleepCycle();
                 await buy(testuser1,"10.0000");
                 await sleepCycle();
                 var claim1 = await claim(testuser1);
@@ -161,7 +162,6 @@ describe(`${contractCode} Contract`, () => {
     it('two cycle auction', done => {
         (async() => {
             try {
-                await sleepCycle();
                 await buy(testuser1,"10.0000");
                 await sleepCycle();
                 await buy(testuser1,"10.0000");
@@ -193,20 +193,19 @@ describe(`${contractCode} Contract`, () => {
             }                    
         })();
     });
-    it('two cycle auction - multiple users', done => {
+    it.only('two cycle auction - multiple users', done => {
         (async() => {
             try {
-                await sleepCycle();
                 await buy(testuser1,"10.0000");
                 await buy(testuser2,"30.0000");
                 await sleepCycle();
-                await buy(testuser1,"30.0000");
-                await buy(testuser2,"10.0000");
+                await buy(testuser1,"1.0000");
+                await buy(testuser2,"3.0000");
                 await sleepCycle();
                 var claim1 = await claim(testuser1);
                 var claim2 = await claim(testuser2);
-                assert.equal(claim1, "100.0000 NEW", "wrong claim amount");
-                assert.equal(claim2, "100.0000 NEW", "wrong claim amount");
+                assert.equal(claim1, "50.0000 NEW", "wrong claim amount");
+                assert.equal(claim2, "150.0000 NEW", "wrong claim amount");
                 done();
             }
             catch (e) {

@@ -121,7 +121,7 @@ CONTRACT microauctions : public eosio::contract {
             // calculate daily price
             if(account_quantity.amount == 0)
               continue;
-            double token_price = (double)quantity_per_day.quantity.amount / cycle_entry->quantity.amount;
+            double token_price = (double)cycle_entry->quantity.amount / quantity_per_day.quantity.amount;
             total += (double)account_quantity.amount / token_price;
             // calculate tokens
             
