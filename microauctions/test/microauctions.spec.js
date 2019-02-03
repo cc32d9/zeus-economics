@@ -131,11 +131,11 @@ describe(`${contractCode} Contract`, () => {
                     
         };
         var transaction = await eos.transaction(
-        ['eosio.token',code],
+        ['eosio.token'],
         (c) => {
-          c[code].enroll({
-                    from: testuser,
-          },options);
+        //   c[code].enroll({
+        //             from: testuser,
+        //   },options);
           
           c['eosio_token'].transfer({
                     from: testuser,
