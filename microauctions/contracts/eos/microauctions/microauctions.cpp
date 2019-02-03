@@ -176,7 +176,7 @@ CONTRACT microauctions : public eosio::contract {
             amount_cycle.quantity = quantity;
             current_account.amounts_cycles.insert(current_account.amounts_cycles.end(), amount_cycle);
         }
-        accounts_table.set(current_account, eosio::same_payer);
+        accounts_table.set(current_account, _self);
         
       }
       bool isWhitelisted(name from){
