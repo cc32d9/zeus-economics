@@ -68,33 +68,7 @@ CONTRACT microauctions : public eosio::contract {
           // eosio_assert(!settings_table.exists(),"already inited");
           settings_table.set(setting, _self);
         }
-        
-        ACTION enroll(name from){
-          accounts_t accounts_table(_self, from.value);
-          settings_t settings_table(_self, _self.value);
-          auto current_settings = settings_table.get();
-          
-          auto current_account = accounts_table.get_or_create(from);
-          auto amounts_cycles = current_account.amounts_cycles;
-          uint64_t cycle_number = getCurrentCycle();
-          eosio_assert(cycle_number < current_settings.cycles, "auction ended");
-          eosio_assert(isWhitelisted(from), "whitelisting required");
 
-          for (int i = 0; i < amounts_cycles.size(); i++) 
-            if(current_account.amounts_cycles[i].number == cycle_number)
-              return;
-          
-          
-          cycle amount_cycle;  
-          amount_cycle.number = cycle_number;
-          asset quantity;
-          quantity.symbol = current_settings.accepted_token.quantity.symbol;
-          quantity.amount = 0;
-          amount_cycle.quantity = quantity;
-          current_account.amounts_cycles.insert(current_account.amounts_cycles.end(), amount_cycle);
-          accounts_table.set(current_account, from);
-          
-        }
         
         ACTION claim(name to){
           // anyone can claim for a user
@@ -109,22 +83,20 @@ CONTRACT microauctions : public eosio::contract {
           auto amounts_cycles = existing.amounts_cycles;
           auto quantity_per_day = current_settings.quantity_per_day;
           double total = 0;
-          for (int i = 0; i < amounts_cycles.size(); i++) {
+          for (int i = amounts_cycles.size()-1; i >=0 ; i--) {
             auto current_cycle = amounts_cycles[i];
-            if(cycle_number <= current_cycle.number) // cycle not complete
+            if(cycle_number <= current_cycle.number){ 
+              // cycle not complete
               continue; 
-            
-            auto cycle_entry = cycles_table.find(current_cycle.number);
-            
+            }
             auto account_quantity = current_cycle.quantity;
-            
-            // calculate daily price
             if(account_quantity.amount == 0)
               continue;
+            auto cycle_entry = cycles_table.find(current_cycle.number);
+            // calculate tokens
             double token_price = (double)cycle_entry->quantity.amount / quantity_per_day.quantity.amount;
             total += (double)account_quantity.amount / token_price;
-            // calculate tokens
-            
+            amounts_cycles.erase(amounts_cycles.begin() + i);
           }
           if(total >= 1){
             extended_asset tokens;
@@ -134,8 +106,11 @@ CONTRACT microauctions : public eosio::contract {
             issueToken(to, tokens);
           }
           // remove all
-          existing.amounts_cycles = std::vector<cycle>();
-          accounts_table.set(existing, to);
+          if(amounts_cycles.size() > 0){
+            accounts_table.set(existing, _self);
+          }
+          else
+            accounts_table.remove();
         }
         
 
@@ -152,9 +127,10 @@ CONTRACT microauctions : public eosio::contract {
           eosio_assert(cycle_number < current_settings.cycles, "auction ended");
           eosio_assert(isWhitelisted(from), "whitelisting required");
           eosio_assert(quantity.symbol == current_settings.accepted_token.quantity.symbol, "wrong asset symbol");
+          eosio_assert(quantity.amount >= current_settings.accepted_token.quantity.amount, "below minimum amount");
           eosio_assert(_code == current_settings.accepted_token.contract, "wrong asset contract");
+          
           // TODO: parse memo to support different account than the sending account
-          // TODO: check minimum
           increaseCycleAmountAccount(cycle_number, from, quantity);
         }
     private:
@@ -182,7 +158,6 @@ CONTRACT microauctions : public eosio::contract {
         }
         
         account current_account;
-        // if(accounts_table.exists())
         current_account = accounts_table.get();
         
         bool found = false;
@@ -231,7 +206,7 @@ extern "C" {
     }
     if (code == receiver) {
       switch (action) {
-        EOSIO_DISPATCH_HELPER(microauctions, (init)(enroll)(claim))
+        EOSIO_DISPATCH_HELPER(microauctions, (init)(claim))
       }
     }
     eosio_exit(0);
