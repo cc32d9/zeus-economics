@@ -158,7 +158,8 @@ CONTRACT microauctions : public eosio::contract {
         }
         
         account current_account;
-        current_account = accounts_table.get();
+        if(accounts_table.exists())
+          current_account = accounts_table.get();
         
         bool found = false;
         for (int i = 0; i < current_account.amounts_cycles.size(); i++) {
