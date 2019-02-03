@@ -169,7 +169,12 @@ CONTRACT microauctions : public eosio::contract {
           found = true;
           break;
         }
-        eosio_assert(found,"must enroll first");
+        if(!found){
+            cycle amount_cycle;  
+            amount_cycle.number = cycle_number;
+            amount_cycle.quantity = quantity;
+            current_account.amounts_cycles.insert(current_account.amounts_cycles.end(), amount_cycle);
+        }
         accounts_table.set(current_account, eosio::same_payer);
         
       }
