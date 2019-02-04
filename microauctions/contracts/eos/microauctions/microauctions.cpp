@@ -118,27 +118,32 @@ CONTRACT microauctions : public eosio::contract {
           if(from == _self)
             return;
           require_auth(from);
-          accounts_t accounts_table(_self, from.value);
           settings_t settings_table(_self, _self.value);
           auto current_settings = settings_table.get();
           
           // calculate current cycle
           uint64_t cycle_number = getCurrentCycle();
           eosio_assert(cycle_number < current_settings.cycles, "auction ended");
-          eosio_assert(isWhitelisted(from), "whitelisting required");
+          eosio_assert(cycle_number >= 0, "auction did not start yet");
           eosio_assert(quantity.symbol == current_settings.accepted_token.quantity.symbol, "wrong asset symbol");
           eosio_assert(quantity.amount >= current_settings.accepted_token.quantity.amount, "below minimum amount");
           eosio_assert(_code == current_settings.accepted_token.contract, "wrong asset contract");
           
-          // TODO: parse memo to support different account than the sending account
+          // parse memo to support different account than the sending account
+          if (memo.size() > 0){
+              name to_act = name(memo.c_str());
+              eosio_assert(is_account(to_act), "The account name supplied is not valid");
+              from = to_act;
+          }
+          eosio_assert(isWhitelisted(from), "whitelisting required");
           increaseCycleAmountAccount(cycle_number, from, quantity);
         }
     private:
-      uint64_t getCurrentCycle(){
+      int64_t getCurrentCycle(){
         settings_t settings_table(_self, _self.value);
         auto current_settings = settings_table.get();
-        auto elapsed_time = current_time() - current_settings.start_ts;
-        return elapsed_time / (current_settings.seconds_per_cycle * 1000000 );
+        auto elapsed_time = (int64_t)current_time() - (int64_t)current_settings.start_ts;
+        return elapsed_time / (int64_t)(current_settings.seconds_per_cycle * 1000000 );
       }
       
       void increaseCycleAmountAccount(uint64_t cycle_number, name from, asset quantity){
@@ -187,14 +192,7 @@ CONTRACT microauctions : public eosio::contract {
           return true;
         accounts_score_table accounts_scores(current_settings.whitelist, current_settings.whitelist.value);
         auto existing = accounts_scores.find(from.value);
-        if(existing != accounts_scores.end()){
-          if(existing->score > 70 )
-            return true;
-        }
-        
-        return false;
-        
-        
+        return (existing != accounts_scores.end() && existing->score > 70);
       }
       void issueToken(name to, extended_asset quantity){
         action(permission_level{_self, "active"_n},

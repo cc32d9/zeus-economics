@@ -35,7 +35,7 @@ var tokenContract = artifacts.require(`./Token/`);
 describe(`${contractCode} Contract`, () => {
     var testcontract;
     var disttokenContract;
-    const perDay = "100.0000"
+    const perCycle = "100.0000"
     const code = 'auction1';
     const cycleTime = 25;
     const distokenSymbol = "NEW"
@@ -63,21 +63,22 @@ describe(`${contractCode} Contract`, () => {
                     sign: true});
                 // var systemtokenContract = await eos.contract('eosio.token');
                 console.error('init auction');
+                var delayedStartCycles = 1;
                 var res = await testcontract.init({
                     setting:{
                         whitelist:code,
                         cycles:50,
                         seconds_per_cycle:cycleTime,
-                        start_ts: new Date().getTime()*1000,
+                        start_ts: (new Date().getTime() + (delayedStartCycles * cycleTime*1000))*1000,
                         quantity_per_day:{
                             contract: disttoken,
-                            amount:perDay,
+                            amount:perCycle,
                             precision: 4,
                             symbol: distokenSymbol
                         },
                         accepted_token:{
                             contract: "eosio.token",
-                            amount: `0.0000`,
+                            amount: `0.1000`,
                             precision: 4,
                             symbol: systemToken
                         }
@@ -102,21 +103,25 @@ describe(`${contractCode} Contract`, () => {
         authorization:[`${code}@active`]
     };
     
-    const claim = async(testuser)=>{
+    const claim = async(testuser, foraccount)=>{
         console.error(`claiming ${testuser}`);
         var eos = await getEos(testuser, args);
         var testcontract1 = await eos.contract(code);
+        foraccount = foraccount || testuser;
         var res = await testcontract1.claim({
-            to:testuser
+            to: foraccount
         }, {
             authorization: `${testuser}@active`,
             broadcast: true,
             sign: true
         });
-        return res.processed.action_traces[0].inline_traces[0].act.data.quantity;
+        if(res.processed.action_traces[0].inline_traces[0])
+            return res.processed.action_traces[0].inline_traces[0].act.data.quantity;
+        else 
+            return null;
     }
     
-    const buy = async(testuser, quantity) =>{
+    const buy = async(testuser, quantity, foraccount) =>{
         console.error(`buying for ${quantity} - ${testuser}`);
         var eos = await getEos(testuser, args);
         const keys = await getCreateAccount(testuser, args);
@@ -133,15 +138,12 @@ describe(`${contractCode} Contract`, () => {
         var transaction = await eos.transaction(
         ['eosio.token'],
         (c) => {
-        //   c[code].enroll({
-        //             from: testuser,
-        //   },options);
           
           c['eosio_token'].transfer({
                     from: testuser,
                     to: code,
                     quantity: `${quantity} ${systemToken}`,
-                    memo:""
+                    memo: foraccount ? foraccount :""
                 },options);
           
         },
@@ -150,9 +152,30 @@ describe(`${contractCode} Contract`, () => {
             
     }
     const sleepCycle = ()=>{
-        return delay(cycleTime * 1000);
+        return delay((cycleTime+1) * 1000);
     }
-    
+    it('auction didnt start yet', done => {
+        (async() => {
+            try {
+                var failed = false;
+                try{
+                    await buy(testuser1,"1.0000");
+                }
+                catch(e){
+                    if(e.toString().indexOf("auction did not start yet") != -1)
+                        failed = true;
+                    else
+                        throw e;
+                }
+                await sleepCycle();
+                assert.equal(failed, true, "should have failed");
+                done();
+            }
+            catch (e) {
+                done(e);
+            }                    
+        })();
+    });
     it('one cycle auction', done => {
         (async() => {
             try {
@@ -188,8 +211,8 @@ describe(`${contractCode} Contract`, () => {
     it('one cycle auction - multiple users', done => {
         (async() => {
             try {
-                await buy(testuser1,"10.0000");
-                await buy(testuser2,"30.0000");
+                await Promise.all([buy(testuser1,"10.0000"),buy(testuser2,"30.0000")]);
+
                 await sleepCycle();
                 var claim1 = await claim(testuser1);
                 var claim2 = await claim(testuser2);
@@ -205,11 +228,9 @@ describe(`${contractCode} Contract`, () => {
     it('two cycle auction - multiple users', done => {
         (async() => {
             try {
-                await buy(testuser1,"10.0000");
-                await buy(testuser2,"30.0000");
+                await Promise.all([buy(testuser1,"10.0000"),buy(testuser2,"30.0000")]);
                 await sleepCycle();
-                await buy(testuser1,"1.0000");
-                await buy(testuser2,"3.0000");
+                await Promise.all([buy(testuser1,"1.0000"),buy(testuser2,"3.0000")]);
                 await sleepCycle();
                 var claim1 = await claim(testuser1);
                 var claim2 = await claim(testuser2);
@@ -223,5 +244,133 @@ describe(`${contractCode} Contract`, () => {
         })();
     });
     
+    it('below minimum', done => {
+        (async() => {
+            try {
+                var failed = false;
+                try{
+                    await buy(testuser1,"0.0001");
+                }
+                catch(e){
+                    if(e.toString().indexOf("below minimum amount") != -1)
+                        failed = true;
+                    else
+                        throw e;
+                }
+                assert.equal(failed, true, "should have failed");
+                done();
+            }
+            catch (e) {
+                done(e);
+            }                    
+        })();
+    });
+    it('claim for today', done => {
+        (async() => {
+            try {
+                await buy(testuser1,"1.0000");
+                var claim1 = await claim(testuser1);
+                assert.equal(claim1, null, "wrong claim amount");
+                await sleepCycle();
+                var claim2 = await claim(testuser1);
+                assert.equal(claim2, "100.0000 NEW", "wrong claim amount");
+                done();
+            }
+            catch (e) {
+                done(e);
+            }                    
+        })();
+    });
+    it('claim for today - with same day buy', done => {
+        (async() => {
+            try {
+                await buy(testuser1,"1.0000");
+                await sleepCycle();
+                await buy(testuser1,"3.0000");
+                var claim1 = await claim(testuser1);
+                await sleepCycle();
+                var claim2 = await claim(testuser1);
+                assert.equal(claim1, "100.0000 NEW", "wrong claim amount");
+                assert.equal(claim2, "100.0000 NEW", "wrong claim amount");
+                done();
+            }
+            catch (e) {
+                done(e);
+            }                    
+        })();
+    });
     
+    
+    it('3rd party buy', done => {
+        (async() => {
+            try {
+                await buy(testuser1,"1.0000", testuser2);
+                await sleepCycle();
+                var claim1 = await claim(testuser2);
+                assert.equal(claim1, "100.0000 NEW", "wrong claim amount");
+                done();
+            }
+            catch (e) {
+                done(e);
+            }                    
+        })();
+    });
+    it('3rd party claim', done => {
+        (async() => {
+            try {
+                await buy(testuser1,"1.0000");
+                await sleepCycle();
+                var claim1 = await claim(testuser2, testuser1);
+                assert.equal(claim1, "100.0000 NEW", "wrong claim amount");
+                done();
+            }
+            catch (e) {
+                done(e);
+            }                    
+        })();
+    });
+    
+    it('whitelist', done => {
+        (async() => {
+            try {
+                done();
+            }
+            catch (e) {
+                done(e);
+            }                    
+        })();
+    });
+    it('whitelist 3rd party', done => {
+        (async() => {
+            try {
+                done();
+            }
+            catch (e) {
+                done(e);
+            }                    
+        })();
+    });
+    
+    it('auction ended', done => {
+        (async() => {
+         try {
+                var failed = false;
+                try{
+                    await buy(testuser1,"1.0000");
+                }
+                catch(e){
+                    if(e.toString().indexOf("auction ended") != -1)
+                        failed = true;
+                    else
+                        throw e;                        
+                }
+                assert.equal(failed, true, "should have failed");
+                done();
+         }
+         catch (e) {
+            done(e);
+         }                    
+        })();
+    });
+
 });
