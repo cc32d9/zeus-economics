@@ -65,7 +65,7 @@ CONTRACT microauctions : public eosio::contract {
         ACTION init(settings setting){
           require_auth(_self);
           settings_t settings_table(_self, _self.value);
-          // eosio_assert(!settings_table.exists(),"already inited");
+          eosio_assert(!settings_table.exists(),"already inited");
           settings_table.set(setting, _self);
         }
 
