@@ -37,7 +37,7 @@ describe(`${contractCode} Contract`, () => {
     var disttokenContract;
     const perCycle = "100.0000"
     const code = 'auction1';
-    const cycleTime = 25;
+    const cycleTime = 30;
     const distokenSymbol = "NEW"
     const disttoken = 'distoken';
     const testuser1 = "testuser1";
@@ -67,7 +67,7 @@ describe(`${contractCode} Contract`, () => {
                 var res = await testcontract.init({
                     setting:{
                         whitelist:code,
-                        cycles:50,
+                        cycles:12,
                         seconds_per_cycle:cycleTime,
                         start_ts: (new Date().getTime() + (delayedStartCycles * cycleTime*1000))*1000,
                         quantity_per_day:{
@@ -176,6 +176,27 @@ describe(`${contractCode} Contract`, () => {
             }                    
         })();
     });
+    it('empty claim', done => {
+        (async() => {
+            try {
+                var failed = false;
+                try{
+                    await claim(testuser3);
+                }
+                catch(e){
+                    if(e.toString().indexOf("account not found") != -1)
+                        failed = true;
+                    else
+                        throw e;
+                }
+                assert.equal(failed, true, "should have failed");
+                done();
+            }
+            catch (e) {
+                done(e);
+            }                    
+        })();
+    });
     it('one cycle auction', done => {
         (async() => {
             try {
@@ -216,8 +237,8 @@ describe(`${contractCode} Contract`, () => {
                 await sleepCycle();
                 var claim1 = await claim(testuser1);
                 var claim2 = await claim(testuser2);
-                assert.equal(claim1, "25.0000 NEW", "wrong claim amount");
-                assert.equal(claim2, "75.0000 NEW", "wrong claim amount");
+                assert.equal(claim1, "25.0000 NEW", "wrong 1st claim amount");
+                assert.equal(claim2, "75.0000 NEW", "wrong 2nd claim amount");
                 done();
             }
             catch (e) {
@@ -234,8 +255,8 @@ describe(`${contractCode} Contract`, () => {
                 await sleepCycle();
                 var claim1 = await claim(testuser1);
                 var claim2 = await claim(testuser2);
-                assert.equal(claim1, "50.0000 NEW", "wrong claim amount");
-                assert.equal(claim2, "150.0000 NEW", "wrong claim amount");
+                assert.equal(claim1, "50.0000 NEW", "wrong 1st claim amount");
+                assert.equal(claim2, "150.0000 NEW", "wrong 2nd claim amount");
                 done();
             }
             catch (e) {
@@ -290,8 +311,8 @@ describe(`${contractCode} Contract`, () => {
                 var claim1 = await claim(testuser1);
                 await sleepCycle();
                 var claim2 = await claim(testuser1);
-                assert.equal(claim1, "100.0000 NEW", "wrong claim amount");
-                assert.equal(claim2, "100.0000 NEW", "wrong claim amount");
+                assert.equal(claim1, "100.0000 NEW", "wrong 1st claim amount");
+                assert.equal(claim2, "100.0000 NEW", "wrong 2nd claim amount");
                 done();
             }
             catch (e) {

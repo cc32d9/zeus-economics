@@ -76,6 +76,7 @@ CONTRACT microauctions : public eosio::contract {
           settings_t settings_table(_self, _self.value);
           cycles_t cycles_table(_self, _self.value);
           auto current_settings = settings_table.get();
+          eosio_assert(accounts_table.exists(), "account not found");
           auto existing = accounts_table.get();
           uint64_t cycle_number = getCurrentCycle();
           
@@ -90,8 +91,6 @@ CONTRACT microauctions : public eosio::contract {
               continue; 
             }
             auto account_quantity = current_cycle.quantity;
-            if(account_quantity.amount == 0)
-              continue;
             auto cycle_entry = cycles_table.find(current_cycle.number);
             // calculate tokens
             double token_price = (double)cycle_entry->quantity.amount / quantity_per_day.quantity.amount;
@@ -105,8 +104,12 @@ CONTRACT microauctions : public eosio::contract {
             tokens.quantity.symbol = quantity_per_day.quantity.symbol;
             issueToken(to, tokens);
           }
+          else{
+            return;
+          }
           // remove all
           if(amounts_cycles.size() > 0){
+            existing.amounts_cycles = amounts_cycles;
             accounts_table.set(existing, _self);
           }
           else
@@ -124,7 +127,7 @@ CONTRACT microauctions : public eosio::contract {
           // calculate current cycle
           uint64_t cycle_number = getCurrentCycle();
           eosio_assert(cycle_number < current_settings.cycles, "auction ended");
-          eosio_assert(cycle_number >= 0, "auction did not start yet");
+          
           eosio_assert(quantity.symbol == current_settings.accepted_token.quantity.symbol, "wrong asset symbol");
           eosio_assert(quantity.amount >= current_settings.accepted_token.quantity.amount, "below minimum amount");
           eosio_assert(_code == current_settings.accepted_token.contract, "wrong asset contract");
@@ -139,11 +142,12 @@ CONTRACT microauctions : public eosio::contract {
           increaseCycleAmountAccount(cycle_number, from, quantity);
         }
     private:
-      int64_t getCurrentCycle(){
+      uint64_t getCurrentCycle(){
         settings_t settings_table(_self, _self.value);
         auto current_settings = settings_table.get();
-        auto elapsed_time = (int64_t)current_time() - (int64_t)current_settings.start_ts;
-        return elapsed_time / (int64_t)(current_settings.seconds_per_cycle * 1000000 );
+        eosio_assert(current_time() >= current_settings.start_ts, "auction did not start yet");
+        auto elapsed_time = current_time() - current_settings.start_ts;
+        return elapsed_time / (current_settings.seconds_per_cycle * 1000000 );
       }
       
       void increaseCycleAmountAccount(uint64_t cycle_number, name from, asset quantity){
