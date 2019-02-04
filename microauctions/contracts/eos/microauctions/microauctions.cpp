@@ -118,7 +118,7 @@ CONTRACT microauctions : public eosio::contract {
         
 
         void transfer(name from, name to, asset quantity, string memo){
-          if(from == _self)
+          if(to != _self)
             return;
           require_auth(from);
           settings_t settings_table(_self, _self.value);
