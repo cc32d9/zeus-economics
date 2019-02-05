@@ -42,6 +42,7 @@ CONTRACT microauctions : public eosio::contract {
             extended_asset  accepted_token;
         };
         
+        typedef eosio::singleton<"settings"_n, settings> settings_t;
         
         
         
@@ -51,17 +52,26 @@ CONTRACT microauctions : public eosio::contract {
           uint64_t primary_key()const { return number; }
         };
         
+        typedef eosio::multi_index<"cycle"_n, cycle> cycles_t;
         
+
+        inline uint128_t paymentid(uint64_t cycle_number, name account) {
+          return ((uint128_t)cycle_number)<<64 + account.value;
+        }
+
         
-        
-        TABLE account {
-          std::vector<cycle> amounts_cycles;
+        TABLE payment {
+          uint64_t  id;
+          uint64_t  cycle_number;
+          name      account;
+          asset     quantity;
+          uint64_t  primary_key()const { return id; }
+          uint128_t get_paymentid()const { return paymentid(cycle_number, account); }
         };
 
+        typedef eosio::multi_index<"payment"_n, payment,
+          indexed_by<"paymentid"_n, const_mem_fun<payment, uint128_t, &payment::get_paymentid>>> payments_t;
 
-        typedef eosio::singleton<"settings"_n, settings> settings_t;
-        typedef eosio::singleton<"account"_n, account> accounts_t;
-        typedef eosio::multi_index<"cycle"_n, cycle> cycles_t;
         
         
         ACTION init(settings setting){
@@ -151,9 +161,11 @@ CONTRACT microauctions : public eosio::contract {
         auto elapsed_time = current_time() - current_settings.start_ts;
         return elapsed_time / (current_settings.seconds_per_cycle * 1000000 );
       }
+
+
       
-      void increaseCycleAmountAccount(uint64_t cycle_number, name from, asset quantity){
-        accounts_t accounts_table(_self, from.value);
+      void increaseCycleAmountAccount(uint64_t cycle_number, name payer, asset quantity){
+        payments_t payments_table(_self, _self.value);
         cycles_t cycles_table(_self, _self.value);
         auto current_cycle_entry = cycles_table.find(cycle_number);
         if(current_cycle_entry == cycles_table.end()){
@@ -167,39 +179,41 @@ CONTRACT microauctions : public eosio::contract {
             s.quantity += quantity;
           });
         }
-        
-        account current_account;
-        if(accounts_table.exists())
-          current_account = accounts_table.get();
-        
-        bool found = false;
-        for (int i = 0; i < current_account.amounts_cycles.size(); i++) {
-          if(current_account.amounts_cycles[i].number != cycle_number)
-            continue;
-          
-          current_account.amounts_cycles[i].quantity += quantity;
-          found = true;
-          break;
+
+        auto payidx = payments_table.get_index<"paymentid"_n>();
+        auto payitr = payidx.find(paymentid(cycle_number, payer));
+        if( payitr == payidx.end() ) {
+          payments_table.emplace(_self, [&](auto &p) {
+            p.id = payments_table.available_primary_key();
+            p.cycle_number = cycle_number;
+            p.account = payer;
+            p.quantity = quantity;
+          });
         }
-        if(!found){
-            cycle amount_cycle;  
-            amount_cycle.number = cycle_number;
-            amount_cycle.quantity = quantity;
-            current_account.amounts_cycles.insert(current_account.amounts_cycles.end(), amount_cycle);
+        else{
+          eosio_assert(payitr->cycle_number == cycle_number && payitr->account == payer,
+                       "Retrieved a wrong pament row");
+          payments_table.modify(*payitr, _self, [&](auto &p) {
+            p.quantity += quantity;
+          });
         }
-        accounts_table.set(current_account, _self);
-        
       }
-      bool isWhitelisted(name from){
+
+      
+      
+      bool isWhitelisted(name payer){
         settings_t settings_table(_self, _self.value);
         auto current_settings = settings_table.get();
         auto whitelist = current_settings.whitelist;
         if(whitelist == _self)
           return true;
         accounts_score_table accounts_scores(current_settings.whitelist, current_settings.whitelist.value);
-        auto existing = accounts_scores.find(from.value);
+        auto existing = accounts_scores.find(payer.value);
         return (existing != accounts_scores.end() && existing->score > 70);
       }
+
+
+      
       void issueToken(name to, extended_asset quantity){
         action(permission_level{_self, "active"_n},
            quantity.contract, "issue"_n,
