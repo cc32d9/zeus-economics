@@ -12,7 +12,9 @@ using namespace eosio;
 using std::string;
 using std::vector;
 
-TABLE account_row {
+
+// this is to access a multi-index in an external whitelist contract
+struct account_row {
    name         account;    //account name
    uint8_t      score;      //enables a score between 0 to 255
    string       metadata;   //json meta data
