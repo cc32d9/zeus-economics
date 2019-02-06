@@ -54,7 +54,7 @@ CONTRACT microauctions : public eosio::contract {
         
         
         TABLE cycle {
-          asset quantity;
+          asset    total_payins;
           uint64_t number;
           uint64_t primary_key()const { return number; }
         };
@@ -90,7 +90,6 @@ CONTRACT microauctions : public eosio::contract {
           settings_t settings_table(_self, _self.value);
           auto current_settings = settings_table.get();
           uint64_t current_cycle = getCurrentCycle(current_settings);
-          auto payout_per_cycle = current_settings.quota_per_cycle.quantity.amount;
           cycles_t cycles_table(_self, _self.value);
 
           auto payidx = payments_table.get_index<"paymentid"_n>();
@@ -99,9 +98,10 @@ CONTRACT microauctions : public eosio::contract {
             auto cycle_entry = cycles_table.find(payitr->cycle_number);
             eosio_assert(cycle_entry != cycles_table.end(), "Cannot find cycle by number");
             
-            uint64_t total_payins = cycle_entry->quantity.amount;
             // our_payin * total_payout / total_payins
-            uint64_t payout = payitr->quantity.amount * payout_per_cycle / total_payins;
+            uint64_t payout =
+              (payitr->quantity.amount * current_settings.quota_per_cycle.quantity.amount) /
+              cycle_entry->total_payins.amount;
             if(payout > 0){
               extended_asset tokens;
               tokens.contract = current_settings.quota_per_cycle.contract;
@@ -167,12 +167,12 @@ CONTRACT microauctions : public eosio::contract {
         if(current_cycle_entry == cycles_table.end()){
           cycles_table.emplace(_self, [&](auto &s) {
             s.number = cycle_number;
-            s.quantity = quantity;
+            s.total_payins = quantity;
           });
         }
         else{
           cycles_table.modify(current_cycle_entry, _self, [&](auto &s) {
-            s.quantity += quantity;
+            s.total_payins += quantity;
           });
         }
 
