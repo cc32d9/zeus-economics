@@ -89,7 +89,7 @@ CONTRACT microauctions : public eosio::contract {
           payments_t payments_table(_self, _self.value);
           settings_t settings_table(_self, _self.value);
           auto current_settings = settings_table.get();
-          uint64_t current_cycle = getCurrentCycle();
+          uint64_t current_cycle = getCurrentCycle(current_settings);
           auto payout_per_cycle = current_settings.quota_per_cycle.quantity.amount;
           cycles_t cycles_table(_self, _self.value);
 
@@ -122,7 +122,7 @@ CONTRACT microauctions : public eosio::contract {
           auto current_settings = settings_table.get();
           
           // calculate current cycle
-          uint64_t cycle_number = getCurrentCycle();
+          uint64_t cycle_number = getCurrentCycle(current_settings);
           eosio_assert(cycle_number < current_settings.cycles, "auction ended");
           
           eosio_assert(quantity.symbol == current_settings.accepted_token.quantity.symbol, "wrong asset symbol");
@@ -152,9 +152,7 @@ CONTRACT microauctions : public eosio::contract {
         
     private:
         
-      uint64_t getCurrentCycle(){
-        settings_t settings_table(_self, _self.value);
-        auto current_settings = settings_table.get();
+      uint64_t getCurrentCycle(settings& current_settings){
         eosio_assert(current_time() >= current_settings.start_ts, "auction did not start yet");
         auto elapsed_time = current_time() - current_settings.start_ts;
         return elapsed_time / (current_settings.seconds_per_cycle * 1000000 );
