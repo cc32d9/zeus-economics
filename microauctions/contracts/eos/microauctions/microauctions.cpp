@@ -122,8 +122,8 @@ CONTRACT microauctions : public eosio::contract {
           auto current_settings = settings_table.get();
           
           // calculate current cycle
-          uint64_t cycle_number = getCurrentCycle(current_settings);
-          eosio_assert(cycle_number < current_settings.cycles, "auction ended");
+          uint64_t current_cycle = getCurrentCycle(current_settings);
+          eosio_assert(current_cycle < current_settings.cycles, "auction ended");
           
           eosio_assert(quantity.symbol == current_settings.accepted_token.quantity.symbol, "wrong asset symbol");
           eosio_assert(quantity.amount >= current_settings.accepted_token.quantity.amount, "below minimum amount");
@@ -136,17 +136,7 @@ CONTRACT microauctions : public eosio::contract {
               from = to_act;
           }
           eosio_assert(isWhitelisted(from), "whitelisting required");
-          increaseCycleAmountAccount(cycle_number, from, quantity);
-
-          // send deferred transaction for payouts
-          transaction tx;
-          tx.actions.emplace_back(
-                                  permission_level{_self, name("active")},
-                                  _self, "sendtokens"_n,
-                                  std::make_tuple(current_settings.payouts_per_payin)
-                                  );
-          tx.delay_sec = current_settings.payouts_delay_sec;
-          tx.send(from.value, _self);
+          registerPayment(current_settings, current_cycle, from, quantity);
         }
 
         
@@ -160,13 +150,13 @@ CONTRACT microauctions : public eosio::contract {
 
 
       
-      void increaseCycleAmountAccount(uint64_t cycle_number, name payer, asset quantity){
+      void registerPayment(settings& current_settings, uint64_t current_cycle, name payer, asset quantity){
         payments_t payments_table(_self, _self.value);
         cycles_t cycles_table(_self, _self.value);
-        auto current_cycle_entry = cycles_table.find(cycle_number);
+        auto current_cycle_entry = cycles_table.find(current_cycle);
         if(current_cycle_entry == cycles_table.end()){
           cycles_table.emplace(_self, [&](auto &s) {
-            s.number = cycle_number;
+            s.number = current_cycle;
             s.total_payins = quantity;
           });
         }
@@ -177,21 +167,35 @@ CONTRACT microauctions : public eosio::contract {
         }
 
         auto payidx = payments_table.get_index<"paymentid"_n>();
-        auto payitr = payidx.find(paymentid(cycle_number, payer));
+        auto payitr = payidx.find(paymentid(current_cycle, payer));
         if( payitr == payidx.end() ) {
           payments_table.emplace(_self, [&](auto &p) {
             p.id = payments_table.available_primary_key();
-            p.cycle_number = cycle_number;
+            p.cycle_number = current_cycle;
             p.account = payer;
             p.quantity = quantity;
           });
         }
         else{
-          eosio_assert(payitr->cycle_number == cycle_number && payitr->account == payer,
+          eosio_assert(payitr->cycle_number == current_cycle && payitr->account == payer,
                        "Retrieved a wrong payment row");
           payments_table.modify(*payitr, _self, [&](auto &p) {
             p.quantity += quantity;
           });
+        }
+
+        // if there are any pending payouts, schedule a deferred tx
+        payitr = payidx.begin();
+        // no need to check for payidx.end() because we just inserted an entry
+        if( payitr->cycle_number < current_cycle ) { 
+          transaction tx;
+          tx.actions.emplace_back(
+                                  permission_level{_self, name("active")},
+                                  _self, "sendtokens"_n,
+                                  std::make_tuple(current_settings.payouts_per_payin)
+                                  );
+          tx.delay_sec = current_settings.payouts_delay_sec;
+          tx.send(payer.value, _self);
         }
       }
 
@@ -207,7 +211,7 @@ CONTRACT microauctions : public eosio::contract {
         auto existing = accounts_scores.find(payer.value);
         return (existing != accounts_scores.end() && existing->score > 70);
       }
-
+        
 
       
       void issueToken(name to, extended_asset quantity){
