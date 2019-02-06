@@ -29,6 +29,11 @@ typedef eosio::multi_index<
 > accounts_score_table;
 
 
+inline uint128_t paymentid(uint64_t cycle_number, name account) {
+  return (((uint128_t)cycle_number)<<64) + account.value;
+}
+
+
 CONTRACT microauctions : public eosio::contract {
     using contract::contract;
     public:
@@ -38,8 +43,10 @@ CONTRACT microauctions : public eosio::contract {
             uint64_t        cycles;
             uint64_t        seconds_per_cycle;
             uint64_t        start_ts;
-            extended_asset  quantity_per_day;
+            extended_asset  quota_per_cycle;
             extended_asset  accepted_token;
+            uint16_t        payouts_per_payin;  // how many outbound transfers to trigger on each inbound
+            uint16_t        payouts_delay_sec;  // defferred transaction delay in seconds
         };
         
         typedef eosio::singleton<"settings"_n, settings> settings_t;
@@ -54,11 +61,6 @@ CONTRACT microauctions : public eosio::contract {
         
         typedef eosio::multi_index<"cycle"_n, cycle> cycles_t;
         
-
-        inline uint128_t paymentid(uint64_t cycle_number, name account) {
-          return ((uint128_t)cycle_number)<<64 + account.value;
-        }
-
         
         TABLE payment {
           uint64_t  id;
@@ -82,50 +84,33 @@ CONTRACT microauctions : public eosio::contract {
         }
 
         
-        ACTION claim(name to){
-          // anyone can claim for a user
-          accounts_t accounts_table(_self, to.value);
+        // Send up to this many transfers. Anyone can trigger this action.
+        ACTION sendtokens(uint16_t count){
+          payments_t payments_table(_self, _self.value);
           settings_t settings_table(_self, _self.value);
-          cycles_t cycles_table(_self, _self.value);
           auto current_settings = settings_table.get();
-          eosio_assert(accounts_table.exists(), "account not found");
-          auto existing = accounts_table.get();
-          uint64_t cycle_number = getCurrentCycle();
-          
-          // foreach: days before current cycle
-          auto amounts_cycles = existing.amounts_cycles;
-          auto quantity_per_day = current_settings.quantity_per_day;
-          double total = 0;
-          for (int i = amounts_cycles.size()-1; i >=0 ; i--) {
-            auto current_cycle = amounts_cycles[i];
-            if(cycle_number <= current_cycle.number){ 
-              // cycle not complete
-              continue; 
+          uint64_t current_cycle = getCurrentCycle();
+          auto payout_per_cycle = current_settings.quota_per_cycle.quantity.amount;
+          cycles_t cycles_table(_self, _self.value);
+
+          auto payidx = payments_table.get_index<"paymentid"_n>();
+          auto payitr = payidx.begin();
+          while( count-- > 0 && payitr != payidx.end() && payitr->cycle_number < current_cycle ) {
+            auto cycle_entry = cycles_table.find(payitr->cycle_number);
+            eosio_assert(cycle_entry != cycles_table.end(), "Cannot find cycle by number");
+            
+            uint64_t total_payins = cycle_entry->quantity.amount;
+            // our_payin * total_payout / total_payins
+            uint64_t payout = payitr->quantity.amount * payout_per_cycle / total_payins;
+            if(payout > 0){
+              extended_asset tokens;
+              tokens.contract = current_settings.quota_per_cycle.contract;
+              tokens.quantity.amount = payout;
+              tokens.quantity.symbol = current_settings.quota_per_cycle.quantity.symbol;
+              issueToken(payitr->account, tokens);
             }
-            auto account_quantity = current_cycle.quantity;
-            auto cycle_entry = cycles_table.find(current_cycle.number);
-            // calculate tokens
-            double token_price = (double)cycle_entry->quantity.amount / quantity_per_day.quantity.amount;
-            total += (double)account_quantity.amount / token_price;
-            amounts_cycles.erase(amounts_cycles.begin() + i);
+            payitr = payidx.erase(payitr);
           }
-          if(total >= 1){
-            extended_asset tokens;
-            tokens.contract = quantity_per_day.contract;
-            tokens.quantity.amount = total;
-            tokens.quantity.symbol = quantity_per_day.quantity.symbol;
-            issueToken(to, tokens);
-          }
-          else{
-            return;
-          }
-          // remove all
-          if(amounts_cycles.size() > 0){
-            existing.amounts_cycles = amounts_cycles;
-            accounts_table.set(existing, _self);
-          }
-          else
-            accounts_table.remove();
         }
         
 
@@ -152,8 +137,21 @@ CONTRACT microauctions : public eosio::contract {
           }
           eosio_assert(isWhitelisted(from), "whitelisting required");
           increaseCycleAmountAccount(cycle_number, from, quantity);
+
+          // send deferred transaction for payouts
+          transaction tx;
+          tx.actions.emplace_back(
+                                  permission_level{_self, name("active")},
+                                  _self, "sendtokens"_n,
+                                  std::make_tuple(current_settings.payouts_per_payin)
+                                  );
+          tx.delay_sec = current_settings.payouts_delay_sec;
+          tx.send(from.value, _self);
         }
+
+        
     private:
+        
       uint64_t getCurrentCycle(){
         settings_t settings_table(_self, _self.value);
         auto current_settings = settings_table.get();
@@ -192,7 +190,7 @@ CONTRACT microauctions : public eosio::contract {
         }
         else{
           eosio_assert(payitr->cycle_number == cycle_number && payitr->account == payer,
-                       "Retrieved a wrong pament row");
+                       "Retrieved a wrong payment row");
           payments_table.modify(*payitr, _self, [&](auto &p) {
             p.quantity += quantity;
           });
@@ -230,7 +228,7 @@ extern "C" {
     }
     if (code == receiver) {
       switch (action) {
-        EOSIO_DISPATCH_HELPER(microauctions, (init)(claim))
+        EOSIO_DISPATCH_HELPER(microauctions, (init)(sendtokens))
       }
     }
     eosio_exit(0);
