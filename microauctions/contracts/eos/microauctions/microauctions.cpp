@@ -54,20 +54,20 @@ CONTRACT microauctions : public eosio::contract {
             uint16_t        payouts_delay_sec;  // defferred transaction delay in seconds
             uint16_t        payout_cycles_per_user; // how many cycles aggregated per transfer for a user
         };
-        
+
         typedef eosio::singleton<"settings"_n, settings> settings_t;
-        
-        
-        
+
+
+
         TABLE cycle {
           asset    total_payins;
           uint64_t number;
           uint64_t primary_key()const { return number; }
         };
-        
+
         typedef eosio::multi_index<"cycle"_n, cycle> cycles_t;
-        
-        
+
+
         TABLE payment {
           uint64_t  id;
           uint64_t  cycle_number;
@@ -83,8 +83,8 @@ CONTRACT microauctions : public eosio::contract {
           indexed_by<"ordbyuser"_n, const_mem_fun<payment, uint128_t, &payment::get_ordbyuser>>
           > payments_t;
 
-        
-        
+
+
         ACTION init(settings setting){
           require_auth(_self);
           settings_t settings_table(_self, _self.value);
@@ -92,7 +92,7 @@ CONTRACT microauctions : public eosio::contract {
           settings_table.set(setting, _self);
         }
 
-        
+
         // aggregate payments for a user
         ACTION claim(name payer){
           send_tokens_for_user(payer, true);
@@ -105,22 +105,22 @@ CONTRACT microauctions : public eosio::contract {
           auto current_settings = settings_table.get();
           int64_t current_cycle = getCurrentCycle(current_settings);
           cycles_t cycles_table(_self, _self.value);
-          
+
           double total_payouts = 0;
           uint16_t count = current_settings.payout_cycles_per_user;
           eosio_assert(count > 0, "payout_cycles_per_user cannot be zero");
           bool found = false;
           vector<uint64_t> processed_cycles;
-          
+
           auto payidx = payments_table.get_index<"ordbyuser"_n>();
           auto payitr = payidx.lower_bound(ordbyuser(0, payer));
-          
+
           while( count-- > 0 && payitr != payidx.end() && payitr->account == payer ) {
             auto cycle_entry = cycles_table.find(payitr->cycle_number);
             eosio_assert(cycle_entry != cycles_table.end(), "Cannot find cycle by number");
             found = true;
             processed_cycles.emplace_back(payitr->cycle_number);
-            
+
             // our_payin * total_payout / total_payins
             double payout =
               (double)(payitr->quantity.amount * current_settings.quota_per_cycle.quantity.amount) /
@@ -137,7 +137,7 @@ CONTRACT microauctions : public eosio::contract {
           payout.contract = current_settings.quota_per_cycle.contract;
           payout.quantity.amount = total_payouts;
           payout.quantity.symbol = current_settings.quota_per_cycle.quantity.symbol;
-          
+
           if( payout.quantity.amount > 0 ) {
             issueToken(payer, payout);
           }
@@ -150,8 +150,8 @@ CONTRACT microauctions : public eosio::contract {
           }.send();
         }
 
-        
-        
+
+
         // Send up to this many transfers. Anyone can trigger this action.
         ACTION sendtokens(uint16_t count) {
           payments_t payments_table(_self, _self.value);
@@ -169,7 +169,7 @@ CONTRACT microauctions : public eosio::contract {
         }
 
 
-        
+
         // inline notifications
         struct receipt_abi {
           name payer;
@@ -180,25 +180,25 @@ CONTRACT microauctions : public eosio::contract {
           require_auth(_self);
           require_recipient(payer);
         }
-        
-          
+
+
         void transfer(name from, name to, asset quantity, string memo) {
           if(to != _self)
             return;
           require_auth(from);
           settings_t settings_table(_self, _self.value);
           auto current_settings = settings_table.get();
-          
+
           // calculate current cycle
           uint64_t current_cycle = getCurrentCycle(current_settings);
           eosio_assert(current_cycle < current_settings.cycles, "auction ended");
-          
+
           eosio_assert(quantity.symbol == current_settings.accepted_token.quantity.symbol,
                        "wrong asset symbol");
           eosio_assert(quantity.amount >= current_settings.accepted_token.quantity.amount,
                        "below minimum amount");
           eosio_assert(_code == current_settings.accepted_token.contract, "wrong asset contract");
-          
+
           // parse memo to support different account than the sending account
           if (memo.size() > 0){
               name to_act = name(memo.c_str());
@@ -209,9 +209,9 @@ CONTRACT microauctions : public eosio::contract {
           registerPayment(current_settings, current_cycle, from, quantity);
         }
 
-        
+
     private:
-        
+
       uint64_t getCurrentCycle(settings& current_settings){
         eosio_assert(current_time() >= current_settings.start_ts, "auction did not start yet");
         auto elapsed_time = current_time() - current_settings.start_ts;
@@ -219,7 +219,7 @@ CONTRACT microauctions : public eosio::contract {
       }
 
 
-      
+
       void registerPayment(settings& current_settings, uint64_t current_cycle, name payer, asset quantity){
         payments_t payments_table(_self, _self.value);
         cycles_t cycles_table(_self, _self.value);
@@ -258,7 +258,7 @@ CONTRACT microauctions : public eosio::contract {
           // if there are any pending payouts, schedule a deferred tx
           payitr = payidx.begin();
           // no need to check for payidx.end() because we just inserted an entry
-          if( payitr->cycle_number < current_cycle) { 
+          if( payitr->cycle_number < current_cycle) {
             transaction tx;
             tx.actions.emplace_back(
                                     permission_level{_self, "active"_n},
@@ -271,8 +271,8 @@ CONTRACT microauctions : public eosio::contract {
         }
       }
 
-      
-      
+
+
       bool isWhitelisted(name payer){
         settings_t settings_table(_self, _self.value);
         auto current_settings = settings_table.get();
@@ -283,9 +283,9 @@ CONTRACT microauctions : public eosio::contract {
         auto existing = accounts_scores.find(payer.value);
         return (existing != accounts_scores.end() && existing->score > 70);
       }
-        
 
-      
+
+
       void issueToken(name to, extended_asset quantity){
         action(permission_level{_self, "active"_n},
            quantity.contract, "issue"_n,
