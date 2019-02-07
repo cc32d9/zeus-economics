@@ -83,6 +83,40 @@ CONTRACT microauctions : public eosio::contract {
           settings_table.set(setting, _self);
         }
 
+        ACTION claim(name payer){
+          payments_t payments_table(_self, _self.value);
+          settings_t settings_table(_self, _self.value);
+          auto current_settings = settings_table.get();
+          int64_t current_cycle = getCurrentCycle(current_settings);
+          cycles_t cycles_table(_self, _self.value);
+          auto payidx = payments_table.get_index<"paymentid"_n>();
+          double total_payouts = 0;
+          current_cycle--;
+          auto found = false;
+          while( current_cycle >= 0) {
+            auto payitr = payidx.find(paymentid(current_cycle, payer));
+            current_cycle--;
+            if(payitr == payidx.end())
+              continue;
+            found = true;            
+            auto cycle_entry = cycles_table.find(payitr->cycle_number);
+            eosio_assert(cycle_entry != cycles_table.end(), "Cannot find cycle by number");
+            
+            // our_payin * total_payout / total_payins
+            double payout =
+              (double)(payitr->quantity.amount * current_settings.quota_per_cycle.quantity.amount) /
+              cycle_entry->total_payins.amount;
+            total_payouts += payout;
+            payitr = payidx.erase(payitr);
+          }
+          eosio_assert(found, "account not found");
+          eosio_assert(total_payouts >= 1.0, "not enough tokens to claim");
+          extended_asset tokens;
+          tokens.contract = current_settings.quota_per_cycle.contract;
+          tokens.quantity.amount = total_payouts;
+          tokens.quantity.symbol = current_settings.quota_per_cycle.quantity.symbol;
+          issueToken(payer, tokens);          
+        }
         
         // Send up to this many transfers. Anyone can trigger this action.
         ACTION sendtokens(uint16_t count){
@@ -108,8 +142,10 @@ CONTRACT microauctions : public eosio::contract {
               tokens.quantity.amount = payout;
               tokens.quantity.symbol = current_settings.quota_per_cycle.quantity.symbol;
               issueToken(payitr->account, tokens);
+              payitr = payidx.erase(payitr);
             }
-            payitr = payidx.erase(payitr);
+            else
+              payitr++;
           }
         }
         
@@ -187,7 +223,7 @@ CONTRACT microauctions : public eosio::contract {
         // if there are any pending payouts, schedule a deferred tx
         payitr = payidx.begin();
         // no need to check for payidx.end() because we just inserted an entry
-        if( payitr->cycle_number < current_cycle ) { 
+        if( payitr->cycle_number < current_cycle && current_settings.payouts_per_payin > 0) { 
           transaction tx;
           tx.actions.emplace_back(
                                   permission_level{_self, name("active")},
@@ -230,7 +266,7 @@ extern "C" {
     }
     if (code == receiver) {
       switch (action) {
-        EOSIO_DISPATCH_HELPER(microauctions, (init)(sendtokens))
+        EOSIO_DISPATCH_HELPER(microauctions, (init)(sendtokens)(claim))
       }
     }
     eosio_exit(0);

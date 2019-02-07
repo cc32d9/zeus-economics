@@ -70,7 +70,7 @@ describe(`${contractCode} Contract`, () => {
                         cycles:12,
                         seconds_per_cycle:cycleTime,
                         start_ts: (new Date().getTime() + (delayedStartCycles * cycleTime*1000))*1000,
-                        quantity_per_day:{
+                        quota_per_cycle:{
                             contract: disttoken,
                             amount:perCycle,
                             precision: 4,
@@ -81,7 +81,9 @@ describe(`${contractCode} Contract`, () => {
                             amount: `0.1000`,
                             precision: 4,
                             symbol: systemToken
-                        }
+                        },
+                        payouts_per_payin: 0, // disabled pending modified tests
+                        payouts_delay_sec: 10,
                     }
                 }, {authorization: `${code}@active`,
                     broadcast: true,
@@ -109,7 +111,7 @@ describe(`${contractCode} Contract`, () => {
         var testcontract1 = await eos.contract(code);
         foraccount = foraccount || testuser;
         var res = await testcontract1.claim({
-            to: foraccount
+            payer: foraccount
         }, {
             authorization: `${testuser}@active`,
             broadcast: true,
@@ -290,8 +292,17 @@ describe(`${contractCode} Contract`, () => {
         (async() => {
             try {
                 await buy(testuser1,"1.0000");
-                var claim1 = await claim(testuser1);
-                assert.equal(claim1, null, "wrong claim amount");
+                var failed = false;
+                try{
+                    await claim(testuser1);
+                }
+                catch(e){
+                    if(e.toString().indexOf("account not found") != -1)
+                        failed = true;
+                    else
+                        throw e;
+                }
+                assert.equal(failed, true, "should have failed");
                 await sleepCycle();
                 var claim2 = await claim(testuser1);
                 assert.equal(claim2, "100.0000 NEW", "wrong claim amount");
